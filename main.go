@@ -2,11 +2,14 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/tylerb/graceful"
@@ -19,6 +22,8 @@ var (
 	gracefulTimeout = flag.Duration("graceful-timeout", 10*time.Second, "Wait until force shutdown")
 )
 
+var tombstone = ".restfs-deleted"
+
 type restfs struct {
 	dir string
 }
@@ -28,18 +33,31 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.Method {
 	case "GET":
+		if !fileAvailable(fullpath) {
+			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
 		http.ServeFile(w, r, fullpath)
 	case "PUT":
 		err = c.saveFile(fullpath, r.Body)
 		r.Body.Close()
 	case "DELETE":
-		if ok, _ := strconv.ParseBool(r.URL.Query().Get("recursive")); ok {
-			err = os.RemoveAll(fullpath)
-		} else {
-			err = os.Remove(fullpath)
-		}
+		var stat os.FileInfo
+		stat, err = os.Stat(fullpath)
 		if os.IsNotExist(err) {
-			err = nil
+			return
+		}
+		if stat.IsDir() {
+			recursive, _ := strconv.ParseBool(r.URL.Query().Get("recursive"))
+			if recursive {
+				err = c.removeAll(fullpath)
+			} else {
+				w.WriteHeader(http.StatusBadRequest)
+				fmt.Fprintf(w, "Cannot remove directory; forgot recursive=true?\n")
+				return
+			}
+		} else {
+			err = c.remove(fullpath)
 		}
 	}
 	if err != nil {
@@ -60,6 +78,38 @@ func (c *restfs) saveFile(fullpath string, r io.Reader) error {
 		return err
 	}
 	return nil
+}
+
+func (c *restfs) remove(fullpath string) error {
+	f, err := os.Create(fullpath + tombstone)
+	if err == nil {
+		f.Close()
+	}
+	return err
+}
+
+func (c *restfs) removeAll(fullpath string) error {
+	return filepath.Walk(fullpath, func(name string, stat os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if stat.IsDir() || strings.HasSuffix(name, tombstone) {
+			return nil
+		}
+		return c.remove(name)
+	})
+}
+
+func fileAvailable(fullpath string) bool {
+	astat, err := os.Stat(fullpath)
+	if err != nil {
+		return false
+	}
+	bstat, err := os.Stat(fullpath + tombstone)
+	if err != nil {
+		return os.IsNotExist(err)
+	}
+	return astat.ModTime().After(bstat.ModTime())
 }
 
 func main() {
