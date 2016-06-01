@@ -4,15 +4,18 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/tylerb/graceful"
+	"github.com/yosisa/sigm"
 	"github.com/yosisa/webutil"
 )
 
@@ -20,6 +23,7 @@ var (
 	dataDir         = flag.String("data-dir", "./data", "Data directory")
 	listen          = flag.String("listen", ":8000", "Listen address")
 	gracefulTimeout = flag.Duration("graceful-timeout", 10*time.Second, "Wait until force shutdown")
+	gcInterval      = flag.Duration("gc-interval", time.Hour, "GC interval for cleaning deleted files")
 )
 
 var tombstone = ".restfs-deleted"
@@ -100,6 +104,68 @@ func (c *restfs) removeAll(fullpath string) error {
 	})
 }
 
+type gc struct {
+	dir    string
+	invoke chan struct{}
+}
+
+func newGC(dir string) *gc {
+	g := &gc{
+		dir:    dir,
+		invoke: make(chan struct{}, 1),
+	}
+	go g.loop()
+	return g
+}
+
+func (g *gc) loop() {
+	remove := func(s string) error {
+		log.Printf("Remove %s", s)
+		if err := os.Remove(s); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+	for range g.invoke {
+		log.Print("GC started")
+		start := time.Now()
+		err := filepath.Walk(g.dir, func(name string, stat os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if stat.IsDir() || !strings.HasSuffix(name, tombstone) {
+				return nil
+			}
+			fname := name[:len(name)-len(tombstone)]
+			fstat, err := os.Stat(fname)
+			if err == nil {
+				if !fstat.ModTime().After(stat.ModTime()) {
+					if err = remove(fname); err != nil {
+						return err
+					}
+				}
+				return remove(name)
+			} else if os.IsNotExist(err) {
+				return remove(name)
+			}
+			return err
+		})
+		took := time.Since(start)
+		if err == nil {
+			log.Printf("GC has finished in %v", took)
+		} else {
+			log.Printf("GC has aborted in %v with error: %v", took, err)
+		}
+	}
+}
+
+func (g *gc) Start() {
+	select {
+	case g.invoke <- struct{}{}:
+	default:
+	}
+}
+
 func fileAvailable(fullpath string) bool {
 	astat, err := os.Stat(fullpath)
 	if err != nil {
@@ -116,5 +182,15 @@ func main() {
 	flag.Parse()
 	h := webutil.Logger(&restfs{*dataDir}, webutil.ConsoleLogWriter(os.Stdout))
 	h = webutil.Recoverer(h, os.Stderr)
+	g := newGC(*dataDir)
+	g.Start()
+	sigm.Handle(syscall.SIGUSR1, g.Start)
+	if *gcInterval > 0 {
+		go func() {
+			for range time.Tick(*gcInterval) {
+				g.Start()
+			}
+		}()
+	}
 	graceful.Run(*listen, *gracefulTimeout, h)
 }
