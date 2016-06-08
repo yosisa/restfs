@@ -42,6 +42,7 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.ServeFile(w, r, fullpath)
+		return
 	case "PUT":
 		err = c.saveFile(fullpath, r.Body)
 		r.Body.Close()
@@ -66,7 +67,9 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (c *restfs) saveFile(fullpath string, r io.Reader) error {
