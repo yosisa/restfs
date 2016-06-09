@@ -24,6 +24,7 @@ var (
 	listen          = flag.String("listen", ":8000", "Listen address")
 	gracefulTimeout = flag.Duration("graceful-timeout", 10*time.Second, "Wait until force shutdown")
 	gcInterval      = flag.Duration("gc-interval", time.Hour, "GC interval for cleaning deleted files")
+	prometheusAddr  = flag.String("prometheus", "", "Listen address for prometheus")
 )
 
 var tombstone = ".restfs-deleted"
@@ -183,8 +184,15 @@ func fileAvailable(fullpath string) bool {
 
 func main() {
 	flag.Parse()
-	h := webutil.Logger(&restfs{*dataDir}, webutil.ConsoleLogWriter(os.Stdout))
+
+	var h http.Handler = &restfs{*dataDir}
+	if *prometheusAddr != "" {
+		h = withPrometheus(h)
+		go listenAndServePrometheusHandler(*prometheusAddr)
+	}
+	h = webutil.Logger(h, webutil.ConsoleLogWriter(os.Stdout))
 	h = webutil.Recoverer(h, os.Stderr)
+
 	g := newGC(*dataDir)
 	g.Start()
 	sigm.Handle(syscall.SIGUSR1, g.Start)
