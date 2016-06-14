@@ -25,7 +25,10 @@ var (
 	gracefulTimeout = flag.Duration("graceful-timeout", 10*time.Second, "Wait until force shutdown")
 	gcInterval      = flag.Duration("gc-interval", time.Hour, "GC interval for cleaning deleted files")
 	prometheusAddr  = flag.String("prometheus", "", "Listen address for prometheus")
+	accessLog       = flag.String("access-log", "-", "Path to access log file")
 )
+
+var accessLogWriter = new(webutil.ConsoleLogWriter)
 
 var tombstone = ".restfs-deleted"
 
@@ -182,6 +185,24 @@ func fileAvailable(fullpath string) bool {
 	return astat.ModTime().After(bstat.ModTime())
 }
 
+func openAccessLog() {
+	if *accessLog == "-" {
+		accessLogWriter.Swap(os.Stdout)
+		return
+	}
+	f, err := os.OpenFile(*accessLog, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	if old := accessLogWriter.Swap(f); old != nil {
+		if ic, ok := old.(io.Closer); ok {
+			ic.Close()
+		}
+		log.Print("Reopen access log file")
+	}
+}
+
 func main() {
 	flag.Parse()
 
@@ -190,8 +211,10 @@ func main() {
 		h = withPrometheus(h)
 		go listenAndServePrometheusHandler(*prometheusAddr)
 	}
-	h = webutil.Logger(h, webutil.ConsoleLogWriter(os.Stdout))
-	h = webutil.Recoverer(h, os.Stderr)
+
+	openAccessLog()
+	h = webutil.Logger(h, accessLogWriter)
+	sigm.Handle(syscall.SIGHUP, openAccessLog)
 
 	g := newGC(*dataDir)
 	g.Start()
@@ -203,5 +226,5 @@ func main() {
 			}
 		}()
 	}
-	graceful.Run(*listen, *gracefulTimeout, h)
+	graceful.Run(*listen, *gracefulTimeout, webutil.Recoverer(h, os.Stderr))
 }
