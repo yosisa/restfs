@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -41,11 +42,16 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch r.Method {
 	case "GET":
-		if !fileAvailable(fullpath) {
+		s := stat(fullpath)
+		if s == nil {
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
-		http.ServeFile(w, r, fullpath)
+		if s.IsDir() {
+			serveFileList(w, fullpath)
+		} else {
+			http.ServeFile(w, r, fullpath)
+		}
 		return
 	case "PUT":
 		err = c.saveFile(fullpath, r.Body)
@@ -173,16 +179,58 @@ func (g *gc) Start() {
 	}
 }
 
-func fileAvailable(fullpath string) bool {
+func stat(fullpath string) os.FileInfo {
 	astat, err := os.Stat(fullpath)
 	if err != nil {
-		return false
+		return nil
 	}
+	if astat.IsDir() {
+		return astat
+	}
+
 	bstat, err := os.Stat(fullpath + tombstone)
 	if err != nil {
-		return os.IsNotExist(err)
+		if os.IsNotExist(err) {
+			return astat
+		}
+		log.Print(err)
+		return nil
 	}
-	return astat.ModTime().After(bstat.ModTime())
+	if astat.ModTime().After(bstat.ModTime()) {
+		return astat
+	}
+	return nil
+}
+
+func serveFileList(w http.ResponseWriter, s string) {
+	fis, err := ioutil.ReadDir(s)
+	if err != nil {
+		log.Print(err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	tombstones := make(map[string]os.FileInfo)
+	for _, fi := range fis {
+		name := fi.Name()
+		if strings.HasSuffix(name, tombstone) {
+			name = name[:len(name)-len(tombstone)]
+			tombstones[name] = fi
+		}
+	}
+
+	for _, fi := range fis {
+		name := fi.Name()
+		if strings.HasSuffix(name, tombstone) {
+			continue
+		}
+		if fi.IsDir() {
+			name += "/"
+		} else if ts := tombstones[name]; ts != nil && !fi.ModTime().After(ts.ModTime()) {
+			continue
+		}
+		fmt.Fprintf(w, "%s\n", name)
+	}
 }
 
 func openAccessLog() {
