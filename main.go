@@ -87,7 +87,7 @@ func (c *restfs) saveFile(fullpath string, r io.Reader) error {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(fullpath, os.O_CREATE|os.O_RDWR, 0666)
+	f, err := os.OpenFile(fullpath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 	if err != nil {
 		return err
 	}
