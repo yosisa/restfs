@@ -37,10 +37,10 @@ func withPrometheus(h http.Handler) http.Handler {
 	opts.Help = "The HTTP response sizes in bytes."
 	resSz := prometheus.NewSummaryVec(opts, []string{"method"})
 
-	reqCnt = prometheus.MustRegisterOrGet(reqCnt).(*prometheus.CounterVec)
-	reqDur = prometheus.MustRegisterOrGet(reqDur).(*prometheus.SummaryVec)
-	reqSz = prometheus.MustRegisterOrGet(reqSz).(*prometheus.SummaryVec)
-	resSz = prometheus.MustRegisterOrGet(resSz).(*prometheus.SummaryVec)
+	prometheus.MustRegister(reqCnt)
+	prometheus.MustRegister(reqDur)
+	prometheus.MustRegister(reqSz)
+	prometheus.MustRegister(resSz)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		start := time.Now()
