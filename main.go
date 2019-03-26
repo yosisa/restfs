@@ -74,6 +74,10 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		} else {
 			err = c.remove(fullpath)
 		}
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		fmt.Fprintf(w, "Method not allowed")
+		return
 	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
