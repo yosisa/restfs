@@ -258,6 +258,7 @@ func openAccessLog() {
 func main() {
 	flag.Parse()
 
+	log.Printf("Data directory: %s", *dataDir)
 	var h http.Handler = &restfs{*dataDir}
 	if *prometheusAddr != "" {
 		h = withPrometheus(h)
@@ -272,11 +273,14 @@ func main() {
 	g.Start()
 	sigm.Handle(syscall.SIGUSR1, g.Start)
 	if *gcInterval > 0 {
+		log.Printf("GC runs every %s", *gcInterval)
 		go func() {
 			for range time.Tick(*gcInterval) {
 				g.Start()
 			}
 		}()
 	}
+
+	log.Printf("Server started at %s", *listen)
 	graceful.Run(*listen, *gracefulTimeout, webutil.Recoverer(h, os.Stderr))
 }
