@@ -39,7 +39,10 @@ type restfs struct {
 
 func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fullpath := path.Join(c.dir, r.URL.Path)
-	var err error
+	var (
+		fi  os.FileInfo
+		err error
+	)
 	switch r.Method {
 	case "GET":
 		s := stat(fullpath)
@@ -54,15 +57,19 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	case "PUT":
+		fi, err = os.Stat(fullpath)
+		if fi.IsDir() {
+			http.Error(w, "Cannot overwrite directory", http.StatusBadRequest)
+			return
+		}
 		err = c.saveFile(fullpath, r.Body)
 		r.Body.Close()
 	case "DELETE":
-		var stat os.FileInfo
-		stat, err = os.Stat(fullpath)
+		fi, err = os.Stat(fullpath)
 		if os.IsNotExist(err) {
 			return
 		}
-		if stat.IsDir() {
+		if fi.IsDir() {
 			recursive, _ := strconv.ParseBool(r.URL.Query().Get("recursive"))
 			if recursive {
 				err = c.removeAll(fullpath)
