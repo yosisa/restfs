@@ -47,6 +47,10 @@ func (x byPriority) Len() int           { return len(x) }
 func (x byPriority) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
 func (x byPriority) Less(i, j int) bool { return x[i].priority < x[j].priority }
 
+func registerMiddleware(priority int, wrap func(http.Handler) http.Handler) {
+	middlewares = append(middlewares, &middleware{priority: priority, wrap: wrap})
+}
+
 type restfs struct {
 	dir string
 }

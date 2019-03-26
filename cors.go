@@ -12,17 +12,14 @@ import (
 var corsOrigins = flag.String("cors-origins", "", "CORS origins (comma-separated)")
 
 func init() {
-	middlewares = append(middlewares, &middleware{
-		priority: 10,
-		wrap: func(h http.Handler) http.Handler {
-			if *corsOrigins == "" {
-				return h
-			}
+	registerMiddleware(10, func(h http.Handler) http.Handler {
+		if *corsOrigins == "" {
+			return h
+		}
 
-			log.Printf("CORS Origins: %s", *corsOrigins)
-			items := strings.Split(*corsOrigins, ",")
-			return CORS(h, items...)
-		},
+		log.Printf("CORS Origins: %s", *corsOrigins)
+		items := strings.Split(*corsOrigins, ",")
+		return CORS(h, items...)
 	})
 }
 

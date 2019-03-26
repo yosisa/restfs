@@ -17,17 +17,14 @@ import (
 var prometheusAddr = flag.String("prometheus", "", "Listen address for prometheus")
 
 func init() {
-	middlewares = append(middlewares, &middleware{
-		priority: 2,
-		wrap: func(h http.Handler) http.Handler {
-			if *prometheusAddr == "" {
-				return h
-			}
+	registerMiddleware(2, func(h http.Handler) http.Handler {
+		if *prometheusAddr == "" {
+			return h
+		}
 
-			log.Printf("Prometheus stats enabled at %s", *prometheusAddr)
-			go listenAndServePrometheusHandler(*prometheusAddr)
-			return withPrometheus(h)
-		},
+		log.Printf("Prometheus stats enabled at %s", *prometheusAddr)
+		go listenAndServePrometheusHandler(*prometheusAddr)
+		return withPrometheus(h)
 	})
 }
 
