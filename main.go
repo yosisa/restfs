@@ -31,7 +31,7 @@ var (
 
 var accessLogWriter = new(webutil.ConsoleLogWriter)
 
-var tombstone = ".restfs-deleted"
+const tombstone = ".restfs-deleted"
 
 type restfs struct {
 	dir string
@@ -74,16 +74,14 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if recursive {
 				err = c.removeAll(fullpath)
 			} else {
-				w.WriteHeader(http.StatusBadRequest)
-				fmt.Fprintf(w, "Cannot remove directory; forgot recursive=true?\n")
+				http.Error(w, "Cannot remove directory; forgot recursive=true?", http.StatusBadRequest)
 				return
 			}
 		} else {
 			err = c.remove(fullpath)
 		}
 	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		fmt.Fprintf(w, "Method not allowed")
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 	if err != nil {
