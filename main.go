@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -25,13 +26,26 @@ var (
 	listen          = flag.String("listen", ":8000", "Listen address")
 	gracefulTimeout = flag.Duration("graceful-timeout", 10*time.Second, "Wait until force shutdown")
 	gcInterval      = flag.Duration("gc-interval", time.Hour, "GC interval for cleaning deleted files")
-	prometheusAddr  = flag.String("prometheus", "", "Listen address for prometheus")
 	accessLog       = flag.String("access-log", "-", "Path to access log file")
 )
 
-var accessLogWriter = new(webutil.ConsoleLogWriter)
+var (
+	accessLogWriter = new(webutil.ConsoleLogWriter)
+	middlewares     []*middleware
+)
 
 const tombstone = ".restfs-deleted"
+
+type middleware struct {
+	priority int
+	wrap     func(h http.Handler) http.Handler
+}
+
+type byPriority []*middleware
+
+func (x byPriority) Len() int           { return len(x) }
+func (x byPriority) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
+func (x byPriority) Less(i, j int) bool { return x[i].priority < x[j].priority }
 
 type restfs struct {
 	dir string
@@ -265,9 +279,10 @@ func main() {
 
 	log.Printf("Data directory: %s", *dataDir)
 	var h http.Handler = &restfs{*dataDir}
-	if *prometheusAddr != "" {
-		h = withPrometheus(h)
-		go listenAndServePrometheusHandler(*prometheusAddr)
+
+	sort.Sort(sort.Reverse(byPriority(middlewares)))
+	for _, m := range middlewares {
+		h = m.wrap(h)
 	}
 
 	openAccessLog()

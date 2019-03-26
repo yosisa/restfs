@@ -1,8 +1,10 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -11,6 +13,23 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/yosisa/webutil"
 )
+
+var prometheusAddr = flag.String("prometheus", "", "Listen address for prometheus")
+
+func init() {
+	middlewares = append(middlewares, &middleware{
+		priority: 2,
+		wrap: func(h http.Handler) http.Handler {
+			if *prometheusAddr == "" {
+				return h
+			}
+
+			log.Printf("Prometheus stats enabled at %s", *prometheusAddr)
+			go listenAndServePrometheusHandler(*prometheusAddr)
+			return withPrometheus(h)
+		},
+	})
+}
 
 func withPrometheus(h http.Handler) http.Handler {
 	reqCnt := prometheus.NewCounterVec(prometheus.CounterOpts{
