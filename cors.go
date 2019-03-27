@@ -13,8 +13,8 @@ var corsOrigins = flag.String("cors-origins", "", "CORS origins (comma-separated
 
 var corsHeaders []string
 
-func addCORSHeader(name string) {
-	corsHeaders = append(corsHeaders, name)
+func addCORSHeaders(names ...string) {
+	corsHeaders = append(corsHeaders, names...)
 }
 
 func init() {
