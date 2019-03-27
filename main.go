@@ -76,27 +76,30 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "PUT":
 		fi, err = os.Stat(fullpath)
-		if fi.IsDir() {
+		if err == nil && fi.IsDir() {
 			http.Error(w, "Cannot overwrite directory", http.StatusBadRequest)
 			return
 		}
-		err = c.saveFile(fullpath, r.Body)
-		r.Body.Close()
+		if err == nil || os.IsNotExist(err) {
+			err = c.saveFile(fullpath, r.Body)
+			r.Body.Close()
+		}
 	case "DELETE":
 		fi, err = os.Stat(fullpath)
-		if os.IsNotExist(err) {
-			return
-		}
-		if fi.IsDir() {
-			recursive, _ := strconv.ParseBool(r.URL.Query().Get("recursive"))
-			if recursive {
-				err = c.removeAll(fullpath)
+		if err == nil {
+			if fi.IsDir() {
+				recursive, _ := strconv.ParseBool(r.URL.Query().Get("recursive"))
+				if recursive {
+					err = c.removeAll(fullpath)
+				} else {
+					http.Error(w, "Cannot remove directory; forgot recursive=true?", http.StatusBadRequest)
+					return
+				}
 			} else {
-				http.Error(w, "Cannot remove directory; forgot recursive=true?", http.StatusBadRequest)
-				return
+				err = c.remove(fullpath)
 			}
-		} else {
-			err = c.remove(fullpath)
+		} else if os.IsNotExist(err) {
+			return
 		}
 	default:
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
