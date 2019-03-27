@@ -11,6 +11,12 @@ import (
 
 var corsOrigins = flag.String("cors-origins", "", "CORS origins (comma-separated)")
 
+var corsHeaders []string
+
+func addCORSHeader(name string) {
+	corsHeaders = append(corsHeaders, name)
+}
+
 func init() {
 	registerMiddleware(10, func(h http.Handler) http.Handler {
 		if *corsOrigins == "" {
@@ -27,6 +33,7 @@ func CORS(h http.Handler, origins ...string) http.Handler {
 	c := cors.New(cors.Options{
 		AllowedOrigins: origins,
 		AllowedMethods: []string{"GET", "PUT", "DELETE"},
+		AllowedHeaders: corsHeaders,
 		MaxAge:         600,
 	})
 	return c.Handler(h)
