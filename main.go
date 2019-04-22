@@ -71,6 +71,7 @@ func (c *restfs) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if s.IsDir() {
 			serveFileList(w, fullpath)
 		} else {
+			w.Header().Set("Etag", genEtag(s))
 			http.ServeFile(w, r, fullpath)
 		}
 		return
@@ -230,6 +231,12 @@ func stat(fullpath string) os.FileInfo {
 		return astat
 	}
 	return nil
+}
+
+func genEtag(s os.FileInfo) string {
+	mtime := s.ModTime()
+	t := mtime.Unix()*1000000 + mtime.UnixNano()/1000
+	return fmt.Sprintf(`W/"%x-%x"`, s.Size(), t)
 }
 
 func serveFileList(w http.ResponseWriter, s string) {
